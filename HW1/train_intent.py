@@ -6,62 +6,53 @@ from typing import Dict
 
 import torch
 from torch.utils.data import DataLoader
-from tqdm import trange, tqdm
+from tqdm import tqdm, trange
 
 from dataset import SeqClsDataset
-from utils import Vocab, AverageMeter, ClsMetrics as Metrics
 from model import SeqClassifier
+from utils import Vocab, AverageMeter, ClsMetrics as Metrics
 
 TRAIN = "train"
 DEV = "eval"
 SPLITS = [TRAIN, DEV]
 
-def train_one_epoch(args, model, train_loader, optimizer):
+def trainOneEpoch(args, model, train_loader, optimizer):
     model.train()
-    am_ce = AverageMeter()
-    am_aux = AverageMeter()
-    am_p = AverageMeter()
+    am = AverageMeter()
     m = Metrics()
 
     bar = tqdm(train_loader)
     for i, batch in enumerate(bar):
         batch['text'] = batch['text'].to(args.device)
         batch['intent'] = batch['intent'].to(args.device)
-
-        optimizer.zero_grad()
+        
         output_dict = model(batch)
-
-        bar.set_postfix(loss=output_dict['loss'].item(), iter=i, lr=optimizer.param_groups[0]['lr'])
-
-        am_ce.update(output_dict['loss'], n=batch['intent'].size(0))
+        # ? param_groups
+        bar.set_postfix(iter=i, loss=output_dict['loss'].item(), lr=optimizer.param_groups[0]['lr'])
+        # ?
+        am.update(output_dict['loss'], n=batch['intent'].size(0))
         m.update(batch['intent'].detach().cpu(), output_dict['pred_labels'].detach().cpu())
+
+        # get loss
         loss = output_dict['loss']
-        # if args.aux_loss:
-        #     am_aux.update(output_dict['aux_loss'], n=batch['intent'].size(0))
-        #     loss += output_dict['aux_loss']
-        # if args.att:
-        #     am_p.update(output_dict['penalization'], n=batch['intent'].size(0))
-        #     loss += args.penal_coeff * output_dict['penalization']
-
+        # clear gradients
+        optimizer.zero_grad()
+        # calulate new gradient
         loss.backward()
-
+        # ?
         if args.grad_clip > 0.0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
-
+        # update parameters
         optimizer.step()
-        # if args.scheduler_type == "onecycle":
-        #     scheduler.step()
 
     m.cal()
-    print('Train Loss: {:6.4f}\t Aux: {:6.4f}\t Penalization: {:6.4f}\t Acc: {:6.4f}'.format(am_ce.avg, am_aux.avg, am_p.avg, m.acc))
-    return am_ce.avg, am_aux.avg, am_p.avg, m.acc
+    print('Train Loss: {:6.4f} Acc: {:6.4f}'.format(am.avg, m.accuracy))
+    return am.avg, m.accuracy
 
 @torch.no_grad() 
-def validation(args, model, val_loader):
+def valOneEpoch(args, model, val_loader):
     model.eval()
-    am_ce = AverageMeter()
-    am_aux = AverageMeter()
-    am_p = AverageMeter()
+    am = AverageMeter()
     m = Metrics()
 
     for batch in val_loader:
@@ -69,21 +60,30 @@ def validation(args, model, val_loader):
         batch['intent'] = batch['intent'].to(args.device)
 
         output_dict = model(batch)
-        am_ce.update(output_dict['loss'], n=batch['intent'].size(0))
-        # if args.aux_loss:
-        #     am_aux.update(output_dict['aux_loss'], n=batch['intent'].size(0))
-        # if args.att:
-        #     am_p.update(output_dict['penalization'], n=batch['intent'].size(0))
+
+        # ?
+        am.update(output_dict['loss'], n = batch['intent'].size(0))
         m.update(batch['intent'].detach().cpu(), output_dict['pred_labels'].detach().cpu())
     
     m.cal()
-    print('Val Loss: {:6.4f}\t Aux: {:6.4f}\t Penalization: {:6.4f}\t Acc: {:6.4f}\t'.format(am_ce.avg, am_aux.avg, am_p.avg, m.acc))
-    return am_ce.avg, am_aux.avg, am_p.avg, m.acc
+    print('Val Loss: {:6.4f} Acc: {:6.4f}'.format(am.avg, m.accuracy))
+    return am.avg, m.accuracy
+
+def saveModel(model, ckp_dir, epoch):
+    ckp_path = ckp_dir / '{}-model.pth'.format(epoch + 1)
+    best_ckp_path = ckp_dir / 'best-model.pth'
+    torch.save(model.state_dict(), ckp_path)
+    torch.save(model.state_dict(), best_ckp_path)
+    print('Saved model checkpoints into {}...'.format(ckp_path))
+    print('Saved best model into {}...'.format(best_ckp_path))
 
 def main(args):
     # utils.Vocab
     with open(args.cache_dir / "vocab.pkl", "rb") as f:
         vocab: Vocab = pickle.load(f)
+
+    ckpt_dir = args.ckpt_dir / f"{args.name}"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     # str
     # cache/intent/intent2idx.json
@@ -99,19 +99,19 @@ def main(args):
     # {'train': [{'text': '', 'intent': '', 'id': ''} ... {'text': '', 'intent': '', 'id': 'train-14999'}], 
     #  'eval': [{'text': '', 'intent': '', 'id': ''} ... {'text': '', 'intent': '', 'id': 'train-14999'}]}
     data = {split: json.loads(path.read_text()) for split, path in data_paths.items()}
+    
     # dict
     # {'train': <dataset.SeqClsDataset object at 0x7ff34ccdc250>, 'eval': <dataset.SeqClsDataset object at 0x7ff34ccdc1c0>}
     datasets: Dict[str, SeqClsDataset] = {
         split: SeqClsDataset(split_data, vocab, intent2idx, args.max_len)
         for split, split_data in data.items()
     }
-    print(datasets['train'][14999])
+
     # TODO: crecate DataLoader for train / dev datasets
     dataloaders: Dict[str, DataLoader] ={
         split: DataLoader(split_dataset, args.batch_size, shuffle=True, collate_fn=split_dataset.collate_fn) 
         for split, split_dataset in datasets.items()
     }
-    print(dataloaders['train'])
 
     embeddings = torch.load(args.cache_dir / "embeddings.pt")
     # TODO: init model and move model to target device(cpu / gpu)
@@ -119,15 +119,19 @@ def main(args):
 
     # TODO: init optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    best_acc = 0.0
 
-    epoch_pbar = trange(args.num_epoch, desc="Epoch")
-    for epoch in epoch_pbar:
+    for epoch in range(args.num_epoch):
         # TODO: Training loop - iterate over train dataloader and update model weights
         print("EPOCH: %d" % (epoch))
-        train_loss, train_aux, train_p, train_acc = train_one_epoch(args, model, dataloaders[TRAIN], optimizer)
+        train_loss, train_acc = trainOneEpoch(args, model, dataloaders[TRAIN], optimizer)
         # TODO: Evaluation loop - calculate accuracy and save model weights
-        val_loss, val_aux, val_p, val_acc = validation(args, model, dataloaders[DEV])
+        val_loss, val_acc = valOneEpoch(args, model, dataloaders[DEV])
         # pass
+
+        if val_acc > best_acc:
+            best_acc = val_acc
+            saveModel(model, ckpt_dir, epoch)
 
     # TODO: Inference on test set
 
@@ -144,7 +148,7 @@ def parse_args() -> Namespace:
         "--cache_dir",
         type=Path,
         help="Directory to the preprocessed caches.",
-        default="./cache/intent/",
+        default="./cache/intent_4k/",
     )
     parser.add_argument(
         "--ckpt_dir",
@@ -152,6 +156,8 @@ def parse_args() -> Namespace:
         help="Directory to save the model file.",
         default="./ckpt/intent/",
     )
+    # model file
+    parser.add_argument('--name', default='model', type=str, help='name for saving model')
 
     # data
     parser.add_argument("--max_len", type=int, default=128)
@@ -165,6 +171,7 @@ def parse_args() -> Namespace:
     # optimizer
     parser.add_argument("--lr", type=float, default=1e-3)
 
+    # clipping
     parser.add_argument('--grad_clip', default = 5., type=float, help='max gradient norm')
 
     # data loader
@@ -174,7 +181,7 @@ def parse_args() -> Namespace:
     parser.add_argument(
         "--device", type=torch.device, help="cpu, cuda, cuda:0, cuda:1", default="cpu"
     )
-    parser.add_argument("--num_epoch", type=int, default=100)
+    parser.add_argument("--num_epoch", type=int, default=50)
 
     args = parser.parse_args()
     return args

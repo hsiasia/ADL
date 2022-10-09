@@ -44,10 +44,11 @@ class SeqClsDataset(Dataset):
 
         if 'intent' in samples[0].keys():
             batch['intent'] = [self.label2idx(sample['intent']) for sample in samples]
+            batch['intent'] = torch.tensor(batch['intent'])
         else:
             batch['intent'] = torch.zeros(len(samples), dtype=torch.long)
         
-        batch['intent'] = torch.tensor(batch['intent'])
+        # batch['intent'] = torch.tensor(batch['intent'])
         
         return batch
 

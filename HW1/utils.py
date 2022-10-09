@@ -43,6 +43,7 @@ def pad_to_len(seqs: List[List[int]], to_len: int, padding: int) -> List[List[in
     paddeds = [seq[:to_len] + [padding] * max(0, to_len - len(seq)) for seq in seqs]
     return paddeds
 
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -58,21 +59,45 @@ class AverageMeter(object):
         self.val = val
         self.sum += val * n
         self.count += n
-        self.avg = self.sum / self.count + 1e-12
+        self.avg = self.sum / self.count
+
 
 class ClsMetrics(object):
-    def __init__(self, eps = 1e-8):
-        self.eps = eps
+    def __init__(self):
         self.reset()
 
     def reset(self):
         self.correct = 0
-        self.n = 0
+        self.count = 0
 
     def update(self, target, pred):
-        l = target.size(0)
         self.correct += pred.eq(target.view_as(pred)).sum().item()
-        self.n += l
+        self.count += target.size(0)
     
     def cal(self):
-        self.acc = self.correct / (self.n + self.eps)
+        self.accuracy = self.correct / self.count
+
+
+class TagMetrics(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.tokenCorrect = 0
+        self.jointCorrect = 0
+        self.tokenCount = 0
+        self.jointCount = 0
+
+    def update(self, target, pred, mask):
+        mask = mask[:, :target.size(1)]
+        batch_cor = (target.eq(pred.view_as(target)) * mask).sum(-1)
+        seq_len = mask.sum(-1)
+        
+        self.tokenCorrect += batch_cor.sum().long().item()
+        self.jointCorrect += batch_cor.eq(seq_len).sum().item()
+        self.tokenCount += mask.sum().long().item()
+        self.jointCount += len(target)
+    
+    def cal(self):
+        self.tokenAccuracy = self.tokenCorrect / self.tokenCount
+        self.jointAccuracy = self.jointCorrect / self.jointCount
