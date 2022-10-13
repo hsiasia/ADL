@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict
 
 import torch
+from torch.utils.data import DataLoader
 
 from dataset import SeqClsDataset
 from model import SeqClassifier
@@ -20,26 +21,36 @@ def main(args):
 
     data = json.loads(args.test_file.read_text())
     dataset = SeqClsDataset(data, vocab, intent2idx, args.max_len)
+    
     # TODO: crecate DataLoader for test dataset
+    test_loader = DataLoader(dataset, args.batch_size, shuffle=False, collate_fn=dataset.collate_fn)
 
     embeddings = torch.load(args.cache_dir / "embeddings.pt")
 
-    model = SeqClassifier(
-        embeddings,
-        args.hidden_size,
-        args.num_layers,
-        args.dropout,
-        args.bidirectional,
-        dataset.num_classes,
-    )
+    model = SeqClassifier(embeddings, args.hidden_size, args.num_layers, args.dropout, args.bidirectional, dataset.num_classes).to(args.device)
     model.eval()
 
     ckpt = torch.load(args.ckpt_path)
-    # load weights into model
+    model.load_state_dict(ckpt)
+
+    ids = []
+    labels = []
 
     # TODO: predict dataset
+    for batch in test_loader:
+        batch['text'] = batch['text'].to(args.device)
+        batch['intent'] = batch['intent'].to(args.device)
+        output_dict = model(batch)
+        ids = ids + batch['id']
+        labels = labels + output_dict['pred_labels'].tolist()
 
     # TODO: write prediction to file (args.pred_file)
+    if args.pred_file.parent:
+        args.pred_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(args.pred_file, 'w') as f:
+        f.write('id,intent\n')
+        for i, la in zip(ids, labels):
+            f.write("%s,%s\n" %(i, dataset.idx2label(la)))
 
 
 def parse_args() -> Namespace:
@@ -48,7 +59,7 @@ def parse_args() -> Namespace:
         "--test_file",
         type=Path,
         help="Path to the test file.",
-        required=True
+        default="./data/intent/test.json"
     )
     parser.add_argument(
         "--cache_dir",
@@ -60,6 +71,7 @@ def parse_args() -> Namespace:
         "--ckpt_path",
         type=Path,
         help="Path to model checkpoint.",
+        default="./ckpt/intent/best-model.pth",
         required=True
     )
     parser.add_argument("--pred_file", type=Path, default="pred.intent.csv")
@@ -68,7 +80,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--max_len", type=int, default=128)
 
     # model
-    parser.add_argument("--hidden_size", type=int, default=512)
+    parser.add_argument("--hidden_size", type=int, default=256)
     parser.add_argument("--num_layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--bidirectional", type=bool, default=True)

@@ -6,7 +6,7 @@ from typing import Dict
 
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm, trange
+from tqdm import tqdm
 
 from dataset import SeqClsDataset
 from model import SeqClassifier
@@ -27,9 +27,9 @@ def trainOneEpoch(args, model, train_loader, optimizer):
         batch['intent'] = batch['intent'].to(args.device)
         
         output_dict = model(batch)
-        # ? param_groups
+        #
         bar.set_postfix(iter=i, loss=output_dict['loss'].item(), lr=optimizer.param_groups[0]['lr'])
-        # ?
+        #
         am.update(output_dict['loss'], n=batch['intent'].size(0))
         m.update(batch['intent'].detach().cpu(), output_dict['pred_labels'].detach().cpu())
 
@@ -39,7 +39,7 @@ def trainOneEpoch(args, model, train_loader, optimizer):
         optimizer.zero_grad()
         # calulate new gradient
         loss.backward()
-        # ?
+        #
         if args.grad_clip > 0.0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
         # update parameters
@@ -61,7 +61,7 @@ def valOneEpoch(args, model, val_loader):
 
         output_dict = model(batch)
 
-        # ?
+        #
         am.update(output_dict['loss'], n = batch['intent'].size(0))
         m.update(batch['intent'].detach().cpu(), output_dict['pred_labels'].detach().cpu())
     
@@ -82,7 +82,7 @@ def main(args):
     with open(args.cache_dir / "vocab.pkl", "rb") as f:
         vocab: Vocab = pickle.load(f)
 
-    ckpt_dir = args.ckpt_dir / f"{args.name}"
+    ckpt_dir = args.ckpt_dir
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     # str
@@ -121,7 +121,7 @@ def main(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     best_acc = 0.0
 
-    for epoch in range(args.num_epoch):
+    for epoch in range(args.num_epoch): # 50
         # TODO: Training loop - iterate over train dataloader and update model weights
         print("EPOCH: %d" % (epoch))
         train_loss, train_acc = trainOneEpoch(args, model, dataloaders[TRAIN], optimizer)
@@ -156,14 +156,14 @@ def parse_args() -> Namespace:
         help="Directory to save the model file.",
         default="./ckpt/intent/",
     )
-    # model file
-    parser.add_argument('--name', default='model', type=str, help='name for saving model')
+    # # model file
+    # parser.add_argument('--name', default='', type=str, help='name for saving model')
 
     # data
     parser.add_argument("--max_len", type=int, default=128)
 
     # model
-    parser.add_argument("--hidden_size", type=int, default=512)
+    parser.add_argument("--hidden_size", type=int, default=256)
     parser.add_argument("--num_layers", type=int, default=2)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--bidirectional", type=bool, default=True)
@@ -181,7 +181,7 @@ def parse_args() -> Namespace:
     parser.add_argument(
         "--device", type=torch.device, help="cpu, cuda, cuda:0, cuda:1", default="cpu"
     )
-    parser.add_argument("--num_epoch", type=int, default=50)
+    parser.add_argument("--num_epoch", type=int, default=10)
 
     args = parser.parse_args()
     return args

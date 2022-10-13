@@ -100,11 +100,9 @@ class SeqTaggingClsDataset(SeqClsDataset):
             batch['tags'] = [[self.label2idx(tag) for tag in sample['tags']] for sample in samples]
             batch['tags'] = pad_to_len(batch['tags'], self.max_len, -1)
         else:
-            # ? 
             batch['tags'] = [[0] * self.max_len] * len(samples)
 
         batch['tags'] = torch.tensor(batch['tags'])
-        # ?
         batch['mask'] = batch['tokens'].gt(0).float()
 
         return batch

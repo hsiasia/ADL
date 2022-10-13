@@ -6,7 +6,7 @@ from typing import Dict
 
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm, trange
+from tqdm import tqdm
 
 from dataset import SeqTaggingClsDataset
 from model import SeqTagger
@@ -28,9 +28,9 @@ def trainOneEpoch(args, model, train_loader, optimizer):
         batch['mask'] = batch['mask'].to(args.device)
 
         output_dict = model(batch)
-        # ? param_groups
+        #
         bar.set_postfix(iter=i, loss=output_dict['loss'].item(), lr=optimizer.param_groups[0]['lr'])
-        # ?
+        #
         am.update(output_dict['loss'], n=batch['tokens'].size(0))
         m.update(batch['tags'].cpu(), output_dict['pred_labels'].cpu(), batch['mask'].cpu())
 
@@ -40,7 +40,7 @@ def trainOneEpoch(args, model, train_loader, optimizer):
         optimizer.zero_grad()
         # calulate new gradient
         loss.backward()
-        # ?
+        #
         if args.grad_clip > 0.0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.grad_clip)
         # update parameters
@@ -63,7 +63,7 @@ def valOneEpoch(args, model, val_loader):
 
         output_dict = model(batch)
         
-        # ?
+        #
         am.update(output_dict['loss'], n = batch['tokens'].size(0))
         m.update(batch['tags'].cpu(), output_dict['pred_labels'].cpu(), batch['mask'].cpu())
     
@@ -85,7 +85,7 @@ def main(args):
     with open(args.cache_dir / "vocab.pkl", "rb") as f:
         vocab: Vocab = pickle.load(f)
 
-    ckpt_dir = args.ckpt_dir / f"{args.name}"
+    ckpt_dir = args.ckpt_dir
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
     # str
@@ -146,7 +146,7 @@ def parse_args() -> Namespace:
         "--cache_dir",
         type=Path,
         help="Directory to the preprocessed caches.",
-        default="./cache/slot_1500/",
+        default="./cache/slot/",
     )
     parser.add_argument(
         "--ckpt_dir",
@@ -154,8 +154,8 @@ def parse_args() -> Namespace:
         help="Directory to save the model file.",
         default="./ckpt/slot/",
     )
-    # model file
-    parser.add_argument('--name', default='model', type=str, help='name for saving model')
+    # # model file
+    # parser.add_argument('--name', default='', type=str, help='name for saving model')
 
     # data
     parser.add_argument("--max_len", type=int, default=128)
