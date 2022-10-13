@@ -60,7 +60,7 @@ def parse_args() -> Namespace:
         "--vocab_size",
         type=int,
         help="Number of token in the vocabulary",
-        default=2500,
+        default=1500,
     )
     args = parser.parse_args()
     return args

@@ -1,4 +1,3 @@
-import profile
 from typing import Dict, List
 
 import torch
@@ -31,10 +30,7 @@ class SeqClassifier(torch.nn.Module):
         self.lstm = nn.LSTM(input_size = self.embed_dim, hidden_size = self.hidden_size, num_layers = self.num_layers,
                             dropout = self.dropout, bidirectional = self.bidirectional, batch_first = True)
         self.classifier = nn.Sequential(nn.Dropout(self.dropout),
-                                        nn.Linear(in_features = self.hidden_size * 2, out_features = self.hidden_size),
-                                        nn.ReLU(),
-                                        nn.Dropout(self.dropout),
-                                        nn.Linear(in_features = self.hidden_size, out_features = self.num_class))
+                                        nn.Linear(in_features = self.hidden_size * 2, out_features = self.num_class))
 
     @property
     def encoder_output_size(self) -> int:
@@ -50,7 +46,11 @@ class SeqClassifier(torch.nn.Module):
         #          'len': tensor([12, ..(*128).., 6]), 
         #          'intent': tensor([27, ..(*128).., 117])}
         text, intent = batch['text'], batch['intent'] # [batch_size = 128, max_len = 128] # [batch_size = 128]
-        
+
+        # attention part
+        # # >0 -> trueflase -> 01
+        # mask = (text.gt(0)).float() # [batch_size, max_len]
+
         # text_embedded: [[[-0.1130, ..(*300)..,  0.1077], ..(*128).., [-0.4820, ..(*300).., -0.1723]],
         #                 ..(*128)..,
         #                 [[-0.7481, ..(*300)..,  0.8008], ..(*128).., [-0.4820, ..(*300).., -0.1723]]],
@@ -81,11 +81,27 @@ class SeqClassifier(torch.nn.Module):
         # -1 the last, -2 the second last
         if self.bidirectional:
             hidden = torch.cat((hidden[-1], hidden[-2]), axis=-1) # [batch_size = 128, hidden_size*2 = 1024]
+            # hidden = hidden[-1] + hidden[-2]
 
-        # the result of model save as list
+        # the result of model save as list, original classifier
         pred_logits = self.classifier(hidden)
         # output_dict['pred_logits'] = [pred_logits]
-        
+
+        # # attention start
+        # hidden = hidden.squeeze(0)
+        # att_weights = torch.bmm(output, hidden.unsqueeze(2)).squeeze(2)
+
+        # # 128 -> seq_len
+        # mask = mask[:, :output.size(1)]
+        # mask[mask == 0] = -1e12
+
+        # soft_attn_weights = F.softmax(att_weights + mask[:, :output.size(1)], 1)
+        # new_hidden_state = torch.bmm(output.transpose(1, 2), soft_attn_weights.unsqueeze(2)).squeeze(2)
+
+        # pred_logits = self.classifier(new_hidden_state)
+        # # output_dict['pred_logits'] = [pred_logits]
+        # # attention end
+
         # 1 select the max and indices from each row in matrix [num_classes], True makes output shape same as pred_logits[-1]
         # select second element (label's indices)
         # reshape row to column
