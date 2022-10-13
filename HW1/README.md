@@ -1,4 +1,4 @@
-# Sample Code for Homework 1 ADL NTU
+# Homework 1 ADL NTU
 
 ## Environment
 ```shell
@@ -19,4 +19,44 @@ bash preprocess.sh
 ## Intent detection
 ```shell
 python train_intent.py
+```
+
+## Intent detection
+### train
+```shell
+# you can add arg as --data_dir <data_dir>... after the basic command
+python train_intent.py
+```
+
+### predict
+```shell
+# as reproduce
+python test_intent.py --ckpt_path <ckpt_path>
+```
+
+### reproduce my result
+```shell
+bash download.sh
+bash intent_cls.sh data/intent/test.json pred.intentest.csv
+```
+
+---
+
+## Slot tagging
+### train
+```shell
+# you can add arg as --data_dir <data_dir>... after the basic command
+python train_slot.py
+```
+
+### predict
+```shell
+# as reproduce
+python test_slot.py --ckpt_path <ckpt_path>
+```
+
+### reproduce result
+```shell
+bash download.sh
+bash slot_tag.sh data/slot/test.json pred.slotest.csv
 ```
